@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::net::TcpStream;
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
@@ -72,16 +72,26 @@ impl Dut {
         //read response
         let res = self.handle_resp()?;
         if res.is_error {
-            log::error!("Could not copy files!");
+            log::error!("Could not copy files! {}", file_name);
             Err(anyhow!("Could not copy files!"))
         } else {
-            let mut buffer = vec![0; res.file_size as usize];
+            log::info!("Copy file ing...");
+            let mut buffer = vec![0u8; 64*1024];
             let mut reader = BufReader::new(&self.stream);
-            reader.read_exact(&mut buffer)
-                .context("Read file fail")?;
+            let mut remaining = res.file_size;
+            let mut file = BufWriter::new(File::create(format!("./iq_dump/{}", file_name))?);
 
-            let mut file = File::create(format!("./iq_dump/{}", file_name))?;
-            file.write_all(&buffer)?;
+            while remaining > 0 {
+                let read_len = std::cmp::min(remaining, buffer.len() as u64) as usize;
+                let n = reader.read(&mut buffer[..read_len])?;
+                if n == 0 {
+                    return Err(anyhow!("Not completely receive file!"));
+                }
+                file.write_all(&buffer[..n])?;
+                remaining -= n as u64;
+            }
+
+            file.flush()?;
             log::info!("Saved file {}", file_name);
             Ok(true)
         }
