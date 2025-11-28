@@ -22,31 +22,38 @@ struct  ResponseHeader {
 
 pub struct Dut {
     stream: TcpStream,
+    reader: BufReader<TcpStream>,
 }
 
 impl Dut {
     pub fn new(addr: &str) -> Dut {
         let stream = TcpStream::connect(addr).expect("Could not connect to server");
+        let reader = BufReader::new(stream.try_clone().expect("Could not clone stream"));
         Dut {
-            stream
+            stream,
+            reader
         }
     }
 
-    fn handle_resp(&self) -> anyhow::Result<ResponseHeader> {
-        let mut reader = BufReader::new(&self.stream);
+    fn handle_resp(&mut self) -> anyhow::Result<ResponseHeader> {
         let mut header_line = String::new();
-        reader.read_line(&mut header_line)?;
+        self.reader.read_line(&mut header_line)?;
         let resp: ResponseHeader = serde_json::from_str(&header_line)
             .with_context(|| format!("Could not parse response header line {}", header_line))?;
         Ok(resp)
     }
 
-    pub fn dump_iq(&mut self, band_5g: bool, file_name: String) -> anyhow::Result<bool> {
-        // Send command
-        let cmd = DumpCommand::DumpIQ{band_5g, file_name};
+    fn send_cmd(&mut self, cmd: DumpCommand) -> anyhow::Result<()> {
         let json_req = serde_json::to_string(&cmd)?;
         self.stream.write_all(json_req.as_bytes())?;
         self.stream.write_all(b"\n")?;
+        Ok(())
+    }
+
+    pub fn dump_iq(&mut self, band_5g: bool, file_name: String) -> anyhow::Result<bool> {
+        // Send command
+        let cmd = DumpCommand::DumpIQ{band_5g, file_name};
+        self.send_cmd(cmd)?;
 
         // read response
         Ok(!self.handle_resp()?.is_error)
@@ -55,9 +62,7 @@ impl Dut {
     pub fn del_files(&mut self) -> anyhow::Result<bool> {
         //send command
         let cmd = DumpCommand::DelFiles;
-        let json_req = serde_json::to_string(&cmd)?;
-        self.stream.write_all(json_req.as_bytes())?;
-        self.stream.write_all(b"\n")?;
+        self.send_cmd(cmd)?;
 
         //read response
         Ok(!self.handle_resp()?.is_error)
@@ -65,9 +70,7 @@ impl Dut {
 
     pub fn copy_files(&mut self, file_name: String) -> anyhow::Result<bool> {
         let cmd = DumpCommand::CopyFiles(file_name.clone());
-        let json_req = serde_json::to_string(&cmd)?;
-        self.stream.write_all(json_req.as_bytes())?;
-        self.stream.write_all(b"\n")?;
+        self.send_cmd(cmd)?;
 
         //read response
         let res = self.handle_resp()?;
@@ -77,13 +80,12 @@ impl Dut {
         } else {
             log::info!("Copy file ing...");
             let mut buffer = vec![0u8; 64*1024];
-            let mut reader = BufReader::new(&self.stream);
             let mut remaining = res.file_size;
             let mut file = BufWriter::new(File::create(format!("./iq_dump/{}", file_name))?);
 
             while remaining > 0 {
                 let read_len = std::cmp::min(remaining, buffer.len() as u64) as usize;
-                let n = reader.read(&mut buffer[..read_len])?;
+                let n = self.reader.read(&mut buffer[..read_len])?;
                 if n == 0 {
                     return Err(anyhow!("Not completely receive file!"));
                 }
