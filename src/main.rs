@@ -4,6 +4,7 @@ use crate::config::Band::{HB, LB};
 
 mod client;
 mod config;
+mod rfmetrics;
 
 fn main() -> anyhow::Result<()> {
     simple_logger::init_with_level(log::Level::Info)?;
