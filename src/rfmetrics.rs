@@ -1,7 +1,10 @@
 use std::f64::consts::PI;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::process::id;
 use num_complex::Complex64;
+use rust_xlsxwriter::{ColNum, Color, Format, FormatAlign, RowNum, Workbook, Worksheet};
+use rust_xlsxwriter::ChartType::Column;
 use rustfft::FftPlanner;
 
 #[derive(Debug)]
@@ -306,31 +309,86 @@ impl FileParser {
         self.file_list.push(filename);
     }
 
-    pub fn parse_file(filename: &str, path_sel_1: bool, fs: u8) -> RfMetrics {
+    pub fn parse_and_write(& self) -> anyhow::Result<()>{
+        let mut workbook = Workbook::new();
+        let line = 1;
+        let sheet_lb = workbook.add_worksheet();
+        let sheet_hb = workbook.add_worksheet();
+
+
+
+        let header_format = Format::new()
+            .set_bold()
+            .set_align(FormatAlign::Center)
+            .set_background_color(Color::Gray);
+        let header = ["Fund_freq", "Fund_power", "Total_power", "Channel_power"];
+        for (idx, item) in header.iter().enumerate() {
+            sheet_hb.set_column_width(idx as ColNum, 22)?;
+            sheet_lb.set_column_width(idx as ColNum, 22)?;
+
+            sheet_hb.write_with_format(0, idx as ColNum, header[idx], &header_format)?;
+            sheet_lb.write_with_format(0, idx as ColNum, header[idx], &header_format)?;
+        }
+        for (idx, item) in header.iter().enumerate() {
+            sheet_hb.set_column_width(idx as ColNum + 5, 22)?;
+            sheet_lb.set_column_width(idx as ColNum + 5, 22)?;
+
+            sheet_hb.write_with_format(0, idx as ColNum + 5, header[idx], &header_format)?;
+            sheet_lb.write_with_format(0, idx as ColNum + 5, header[idx], &header_format)?;
+        }
+
+        todo!()
+
+
+    }
+
+    fn write_excel(&mut self, sheet: &mut Worksheet, line: RowNum, metrics: (RfMetrics, RfMetrics)) -> anyhow::Result<()> {
+        sheet.write(line, 0, metrics.0.fund_freq)?;
+        sheet.write(line, 1, metrics.0.fund_power)?;
+        sheet.write(line, 2, metrics.0.total_power)?;
+        sheet.write(line, 3, metrics.0.channel_power)?;
+        sheet.write(line, 5, metrics.1.fund_freq)?;
+        sheet.write(line, 6, metrics.1.fund_power)?;
+        sheet.write(line, 7, metrics.1.total_power)?;
+        sheet.write(line, 8, metrics.1.channel_power)?;
+        Ok(())
+
+    }
+
+    fn parse_file(filename: &str, fs: u8) -> (RfMetrics, RfMetrics) {
         let file = File::open(filename).unwrap();
-        let mut i_data = Vec::new();
-        let mut q_data = Vec::new();
-        let mut temp_flag = path_sel_1;
+        let mut i_data_path1 = Vec::new();
+        let mut q_data_path1 = Vec::new();
+        let mut i_data_path2 = Vec::new();
+        let mut q_data_path2 = Vec::new();
+        let mut temp_flag = true;
         for line in BufReader::new(file).lines() {
             let line = &line.unwrap();
             if temp_flag {
                 if line.is_empty() { continue; }
                 if line.starts_with("0x00") {
                     temp_flag = false;
-                    i_data.push(hex12_to_i16(u16::from_str_radix(&line[7..10], 16).unwrap()));
-                    q_data.push(hex12_to_i16(u16::from_str_radix(&line[4..7], 16).unwrap()));
+                    i_data_path1.push(hex12_to_i16(u16::from_str_radix(&line[7..10], 16).unwrap()));
+                    q_data_path1.push(hex12_to_i16(u16::from_str_radix(&line[4..7], 16).unwrap()));
                     continue
                 }
             } else {
-                temp_flag = true;
-                continue
+                if line.is_empty() { continue; }
+                if line.starts_with("0x00") {
+                    temp_flag = true;
+                    i_data_path2.push(hex12_to_i16(u16::from_str_radix(&line[7..10], 16).unwrap()));
+                    q_data_path2.push(hex12_to_i16(u16::from_str_radix(&line[4..7], 16).unwrap()));
+                    continue
+                }
             }
         }
         if cfg!(test) {
-            println!("{:?}", i_data);
-            println!("{:?}", q_data);
+            println!("{:?}", i_data_path1);
+            println!("{:?}", q_data_path1);
         }
-        (i_data, q_data, fs).calc_metric()
+        let res1 = (i_data_path1, q_data_path1, fs).calc_metric();
+        let res2 = (i_data_path2, q_data_path2, fs).calc_metric();
+        (res1, res2)
     }
 }
 
@@ -350,7 +408,7 @@ mod tests {
     #[test]
     fn test_calc_metric() {
         let file = String::from("test/iq-success.txt");
-        let res = FileParser::parse_file(&file, true, 40);
+        let res = FileParser::parse_file(&file, 40);
         println!("{:?}", res);
     }
 }
