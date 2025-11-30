@@ -1,10 +1,12 @@
-use std::cmp::PartialEq;
+use std::fs;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::net::TcpStream;
+use std::path::Path;
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 use crate::config::Band;
+use crate::rfmetrics::FileParser;
 
 #[derive(Serialize, Deserialize, Debug)]
 enum DumpCommand {
@@ -35,6 +37,7 @@ struct  ResponseHeader {
 pub struct Dut {
     stream: TcpStream,
     reader: BufReader<TcpStream>,
+    pub(crate) file_list: FileParser
 }
 
 impl Dut {
@@ -43,7 +46,8 @@ impl Dut {
         let reader = BufReader::new(stream.try_clone().expect("Could not clone stream"));
         Dut {
             stream,
-            reader
+            reader,
+            file_list: FileParser::new(Vec::new())
         }
     }
 
@@ -90,7 +94,9 @@ impl Dut {
     pub fn copy_files(&mut self, file_name: String) -> anyhow::Result<bool> {
         let cmd = DumpCommand::CopyFiles(file_name.clone());
         self.send_cmd(cmd)?;
-
+        if !Path::new("./iq_dump").exists() {
+            fs::create_dir_all("./iq_dump")?;
+        }
         //read response
         let res = self.handle_resp()?;
         if res.is_error {
@@ -114,6 +120,7 @@ impl Dut {
 
             file.flush()?;
             log::info!("Saved file {}", file_name);
+            self.file_list.add_file(format!("./iq_dump/{}", file_name));
             Ok(true)
         }
     }
@@ -174,7 +181,7 @@ impl Dut {
         let cmd = DumpCommand::SetReg { addr: 0x04e004c8, value: 7};
         self.send_cmd(cmd)?;
 
-        log::info!("Shut Donw Over! is hb? {}", band_5g);
+        log::info!("Shut {} Donw Over!", band_5g);
         Ok(())
     }
 

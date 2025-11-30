@@ -1,4 +1,5 @@
 use std::f64::consts::PI;
+use std::fs;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -323,6 +324,9 @@ impl FileParser {
         self.write_band_excel(Band::HB)?;
         self.write_band_excel(Band::LB)?;
 
+        if !Path::new("./iq_dump").exists() {
+            fs::create_dir_all("./iq_dump")?;
+        }
         self.workbook.save("iq_dump/result.xlsx")?;
         Ok(())
     }
@@ -356,6 +360,7 @@ impl FileParser {
     fn write_header(sheet: &mut Worksheet) -> anyhow::Result<()> {
         let header_format = Format::new()
             .set_bold()
+            .set_text_wrap()
             .set_align(FormatAlign::Center)
             .set_align(FormatAlign::VerticalCenter)
             .set_background_color(Color::Gray);
@@ -368,7 +373,7 @@ impl FileParser {
         sheet.merge_range(0, 6, 0, 9, "Path2", &path_format)?;
 
         sheet.set_row_height(1, 28)?;
-        let header = ["Gain", "Fund_freq", "Fund_power", "Total_power", "Channel_power"];
+        let header = ["Gain\n(fem-lna-vga)", "Fund_freq", "Fund_power", "Total_power", "Channel_power"];
         for (idx, item) in header.iter().enumerate() {
             if idx == 0 {
                 sheet.set_column_width(idx as ColNum, 32)?;
