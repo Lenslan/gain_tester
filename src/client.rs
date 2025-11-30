@@ -5,8 +5,9 @@ use std::net::TcpStream;
 use std::path::Path;
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
-use crate::config::Band;
+use crate::config::{Band, TestBand};
 use crate::rfmetrics::FileParser;
+use crate::testcase::TestCase;
 
 #[derive(Serialize, Deserialize, Debug)]
 enum DumpCommand {
@@ -240,6 +241,10 @@ impl Dut {
             .collect::<Vec<String>>();
         let cmd = DumpCommand::ATECmd{cmd: "ate_cmd".into(), args};
         self.send_cmd(cmd)
+    }
+
+    pub fn run_test(&mut self, band: TestBand) {
+        band.run_test(self)
     }
 }
 

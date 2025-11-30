@@ -20,18 +20,18 @@ fn main() -> anyhow::Result<()> {
     dut.shut_down_band(HB)?;
     dut.open_rx(LB)?;
 
-    TestBand::LB(Fem(0..2)).run_test(&mut dut);
-    TestBand::LB(Lna(0..8)).run_test(&mut dut);
-    TestBand::LB(Vga(0..21)).run_test(&mut dut);
+    dut.run_test(TestBand::LB(Fem(0..2)));
+    dut.run_test(TestBand::LB(Lna(0..8)));
+    dut.run_test(TestBand::LB(Vga(0..21)));
 
     dut.close_rx(LB)?;
     dut.shut_up_band(HB)?;
     dut.shut_down_band(LB)?;
     dut.open_rx(HB)?;
 
-    TestBand::HB(Fem(0..2)).run_test(&mut dut);
-    TestBand::HB(Lna(0..8)).run_test(&mut dut);
-    TestBand::HB(Vga(0..21)).run_test(&mut dut);
+    dut.run_test(TestBand::HB(Fem(0..2)));
+    dut.run_test(TestBand::HB(Lna(0..8)));
+    dut.run_test(TestBand::HB(Vga(0..21)));
 
     dut.file_list
         .sort_file()
