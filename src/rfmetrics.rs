@@ -1,11 +1,11 @@
 use std::f64::consts::PI;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::process::id;
+use std::path::Path;
 use num_complex::Complex64;
 use rust_xlsxwriter::{ColNum, Color, Format, FormatAlign, RowNum, Workbook, Worksheet};
-use rust_xlsxwriter::ChartType::Column;
 use rustfft::FftPlanner;
+use crate::config::Band;
 
 #[derive(Debug)]
 struct RfMetrics {
@@ -296,61 +296,107 @@ impl CalcMetric for (Vec<i16>, Vec<i16>, u8) {
     }
 }
 
-struct FileParser {
+pub(crate) struct FileParser {
     file_list: Vec<String>,
+    workbook: Workbook
 }
 
 impl FileParser {
-    fn new(file_list: Vec<String>) -> Self {
-        Self { file_list }
+    pub(crate) fn new(file_list: Vec<String>) -> Self {
+        let workbook = Workbook::new();
+        Self {
+            file_list,
+            workbook
+        }
     }
 
     pub fn add_file(&mut self, filename: String) {
         self.file_list.push(filename);
     }
 
-    pub fn parse_and_write(& self) -> anyhow::Result<()>{
-        let mut workbook = Workbook::new();
-        let line = 1;
-        let sheet_lb = workbook.add_worksheet();
-        let sheet_hb = workbook.add_worksheet();
+    pub fn sort_file(mut self) -> Self {
+        self.file_list.sort();
+        self
+    }
 
+    pub fn parse_and_write(&mut self) -> anyhow::Result<()>{
+        self.write_band_excel(Band::HB)?;
+        self.write_band_excel(Band::LB)?;
 
+        self.workbook.save("iq_dump/result.xlsx")?;
+        Ok(())
+    }
 
+    fn write_band_excel(&mut self, band: Band) -> anyhow::Result<()> {
+        let mut line = 2;
+        let sheet = self.workbook.add_worksheet();
+
+        Self::write_header(sheet)?;
+
+        let band_name = format!("{}", band).to_lowercase();
+        self.file_list.iter()
+            .for_each(|f| {
+                let file = Path::new(f)
+                    .file_name()
+                    .and_then(|x| x.to_str())
+                    .unwrap();
+                if file.starts_with(&band_name) {
+                    // hb_iq_{fem}_{lna}_{vga}.txt
+                    let res = Self::parse_file(f, 40);
+                    // Some((f[6..12].into_string(), res))
+                    Self::write_excel(sheet, line, res, &file[6..12]).unwrap();
+                    line += 1;
+                }
+            });
+        log::info!("{} has {} cases", band, line-2);
+        sheet.set_name(format!("{}", band))?;
+        Ok(())
+    }
+
+    fn write_header(sheet: &mut Worksheet) -> anyhow::Result<()> {
         let header_format = Format::new()
             .set_bold()
             .set_align(FormatAlign::Center)
+            .set_align(FormatAlign::VerticalCenter)
             .set_background_color(Color::Gray);
-        let header = ["Fund_freq", "Fund_power", "Total_power", "Channel_power"];
+        let path_format = Format::new()
+            .set_bold()
+            .set_align(FormatAlign::VerticalCenter)
+            .set_align(FormatAlign::Center);
+        sheet.set_row_height(0, 32)?;
+        sheet.merge_range(0, 1, 0, 4, "Path1", &path_format)?;
+        sheet.merge_range(0, 6, 0, 9, "Path2", &path_format)?;
+
+        sheet.set_row_height(1, 28)?;
+        let header = ["Gain", "Fund_freq", "Fund_power", "Total_power", "Channel_power"];
         for (idx, item) in header.iter().enumerate() {
-            sheet_hb.set_column_width(idx as ColNum, 22)?;
-            sheet_lb.set_column_width(idx as ColNum, 22)?;
+            if idx == 0 {
+                sheet.set_column_width(idx as ColNum, 32)?;
+            } else {
+                sheet.set_column_width(idx as ColNum, 22)?;
+            }
 
-            sheet_hb.write_with_format(0, idx as ColNum, header[idx], &header_format)?;
-            sheet_lb.write_with_format(0, idx as ColNum, header[idx], &header_format)?;
+            sheet.write_with_format(1, idx as ColNum, *item, &header_format)?;
         }
-        for (idx, item) in header.iter().enumerate() {
-            sheet_hb.set_column_width(idx as ColNum + 5, 22)?;
-            sheet_lb.set_column_width(idx as ColNum + 5, 22)?;
-
-            sheet_hb.write_with_format(0, idx as ColNum + 5, header[idx], &header_format)?;
-            sheet_lb.write_with_format(0, idx as ColNum + 5, header[idx], &header_format)?;
+        for (idx, item) in header[1..].iter().enumerate() {
+            sheet.set_column_width(idx as ColNum + 6, 22)?;
+            sheet.write_with_format(1, idx as ColNum + 6, *item, &header_format)?;
         }
 
-        todo!()
-
+        Ok(())
 
     }
 
-    fn write_excel(&mut self, sheet: &mut Worksheet, line: RowNum, metrics: (RfMetrics, RfMetrics)) -> anyhow::Result<()> {
-        sheet.write(line, 0, metrics.0.fund_freq)?;
-        sheet.write(line, 1, metrics.0.fund_power)?;
-        sheet.write(line, 2, metrics.0.total_power)?;
-        sheet.write(line, 3, metrics.0.channel_power)?;
-        sheet.write(line, 5, metrics.1.fund_freq)?;
-        sheet.write(line, 6, metrics.1.fund_power)?;
-        sheet.write(line, 7, metrics.1.total_power)?;
-        sheet.write(line, 8, metrics.1.channel_power)?;
+    fn write_excel(sheet: &mut Worksheet, line: RowNum, metrics: (RfMetrics, RfMetrics), gain: &str) -> anyhow::Result<()> {
+        sheet.write(line, 0, gain)?;
+        sheet.write(line, 1, metrics.0.fund_freq)?;
+        sheet.write(line, 2, metrics.0.fund_power)?;
+        sheet.write(line, 3, metrics.0.total_power)?;
+        sheet.write(line, 4, metrics.0.channel_power)?;
+        sheet.write(line, 6, metrics.1.fund_freq)?;
+        sheet.write(line, 7, metrics.1.fund_power)?;
+        sheet.write(line, 8, metrics.1.total_power)?;
+        sheet.write(line, 9, metrics.1.channel_power)?;
         Ok(())
 
     }
@@ -405,10 +451,22 @@ fn hex12_to_i16(value: u16) -> i16 {
 mod tests {
     use crate::rfmetrics::FileParser;
 
+    // #[test]
+    // fn test_calc_metric() {
+    //     let file = String::from("test/iq-success.txt");
+    //     let res = FileParser::parse_file(&file, 40);
+    //     println!("{:?}", res);
+    // }
+
     #[test]
-    fn test_calc_metric() {
-        let file = String::from("test/iq-success.txt");
-        let res = FileParser::parse_file(&file, 40);
-        println!("{:?}", res);
+    fn test_excel() {
+        simple_logger::init_with_level(log::Level::Info).unwrap();
+        // let file_list = vec!["test/hb_iq_0_0_00.txt"];
+        let mut file = FileParser::new(Vec::new());
+
+        file.add_file("test/hb_iq_0_0_00.txt".into());
+        file.sort_file()
+            .parse_and_write()
+            .unwrap();
     }
 }

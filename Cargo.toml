@@ -14,3 +14,4 @@ strum = { version = "0.27.2", features = ["derive"]}
 rustfft = "6.4.1"
 num-complex = "0.4.6"
 rust_xlsxwriter = "0.92.2"
+regex = "1.12.2"
